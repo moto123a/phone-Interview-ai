@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phone Interview AI</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; background:#070b12; color:#eaf2ff; }
+    .wrap { max-width:820px; margin:0 auto; padding:14px; min-height:100vh; box-sizing:border-box; }
+    .topbar { position: sticky; top:0; z-index:10; background: rgba(7,11,18,0.92); backdrop-filter: blur(10px);
+      border:1px solid #1f2a3e; border-radius:18px; padding:12px; display:flex; justify-content:space-between; gap:10px; }
+    .brand { font-weight:900; }
+    .pill { border:1px solid #2b3d5a; background:#0c1422; border-radius:999px; padding:6px 10px; font-size:12px; white-space:nowrap; }
+    .ok { border-color:#2f7; } .danger { border-color:#b33; }
+
+    .card { background:#0b1220; border:1px solid #1f2a3e; border-radius:18px; padding:14px; margin:12px 0; }
+    label { display:block; font-size:12px; opacity:0.82; font-weight:800; margin-bottom:6px; }
+    input, select, textarea { width:100%; box-sizing:border-box; border-radius:14px; border:1px solid #2b3d5a; background:#0c1422; color:#eaf2ff;
+      padding:12px; font-size:15px; outline:none; }
+    textarea { min-height:110px; resize:vertical; }
+
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    button { width:100%; border:1px solid #2b3d5a; background:#0c1422; color:#eaf2ff; border-radius:16px; padding:12px 10px;
+      font-size:15px; font-weight:900; }
+    button.primary { background:#13233d; border-color:#3a5a8e; }
+    button.dangerBtn { background:#2a1220; border-color:#7a3550; }
+    button:disabled { opacity:0.45; }
+
+    .mini { font-size:12px; opacity:0.75; line-height:1.45; margin-top:8px; }
+    .mono { white-space:pre-wrap; word-break:break-word; line-height:1.4; font-size:16px; }
+    .bigBox { min-height:170px; }
+
+    .hide { display:none; }
+
+    @media(max-width:520px){ .grid2{grid-template-columns:1fr;} }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <div class="brand">Phone Interview AI</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <span class="pill" id="backendPill">Backend: checking...</span>
+        <span class="pill" id="sttPill">STT: idle</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid2">
+        <div>
+          <label>STT Engine</label>
+          <select id="sttEngine">
+            <option value="webspeech">WebSpeech (live, Android best)</option>
+            <option value="whisper" selected>Whisper (backend, iPhone supported)</option>
+          </select>
+          <div class="mini" id="engineNote">Choose WebSpeech on Android for instant text. Choose Whisper on iPhone.</div>
+        </div>
+
+        <div>
+          <label>Language</label>
+          <select id="langSelect">
+            <option value="en" selected>English (en)</option>
+          </select>
+          <div class="mini">We can add more languages later.</div>
+        </div>
+      </div>
+
+      <div id="whisperOptions" style="margin-top:10px;">
+        <div class="grid2">
+          <div>
+            <label>Whisper Model</label>
+            <select id="whisperModel"></select>
+            <div class="mini">Base = fastest. large-v3-turbo = best quality on CPU.</div>
+          </div>
+          <div>
+            <label>Chunk Seconds</label>
+            <select id="chunkSec">
+              <option value="1" selected>1 sec (most live)</option>
+              <option value="2">2 sec</option>
+              <option value="3">3 sec</option>
+            </select>
+            <div class="mini">Lower is more live but can repeat words.</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="webspeechOptions" class="hide" style="margin-top:10px;">
+        <div class="mini" id="webspeechSupportLine">Checking WebSpeech support...</div>
+      </div>
+
+      <div class="grid2" style="margin-top:12px;">
+        <button class="primary" id="btnStart">Start STT</button>
+        <button class="dangerBtn" id="btnStop" disabled>Stop STT</button>
+      </div>
+
+      <div class="mini" id="statusLine">Ready.</div>
+    </div>
+
+    <div class="card">
+      <label>Live Transcript</label>
+      <div class="mono bigBox" id="transcript">Press Start STT, then speak.</div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <button id="btnClear">Clear</button>
+        <button id="btnCopy">Copy Transcript</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="grid2">
+        <div>
+          <label>Ollama Model</label>
+          <select id="ollamaModel"></select>
+        </div>
+        <div>
+          <label>Answer Tone</label>
+          <select id="tone">
+            <option value="short">Short</option>
+            <option value="medium" selected>Medium</option>
+            <option value="detailed">Detailed</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label>Resume (optional paste)</label>
+        <textarea id="resume" placeholder="Paste resume here (optional)."></textarea>
+      </div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <button class="primary" id="btnAnswer">Generate Answer (uses transcript)</button>
+        <button id="btnCopyAns">Copy Answer</button>
+      </div>
+
+      <div class="mini" id="ansStatus">Answer: ready</div>
+      <div class="mono bigBox" id="answer">Your answer will appear here.</div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
