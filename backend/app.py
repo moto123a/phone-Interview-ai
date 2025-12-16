@@ -190,3 +190,7 @@ def answer(req: AnswerReq):
         return {"answer": content.strip() if content else "No answer returned from Ollama."}
     except Exception as e:
         return {"answer": f"Ollama error: {e}"}
+        @app.get("/")
+def root():
+    return {"status": "ok", "service": "phone-interview-ai"}
+
