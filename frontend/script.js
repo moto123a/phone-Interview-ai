@@ -1,4 +1,4 @@
-const BACKEND = window.location.origin;
+const BACKEND = window.BACKEND || window.location.origin;
 
 const API_HEALTH = `${BACKEND}/health`;
 const API_STT_MODELS = `${BACKEND}/stt/models`;
@@ -10,18 +10,13 @@ const API_ANSWER = `${BACKEND}/answer`;
 
 function $(id){ return document.getElementById(id); }
 
-// Pills
 const backendPill = $("backendPill");
 const sttPill = $("sttPill");
 const statusLine = $("statusLine");
 
-// Views
-const setupView = $("setupView");
-const interviewView = $("interviewView");
-const startInterviewBtn = $("startInterviewBtn");
-const btnBack = $("btnBack");
+const advancedView = $("advancedView");
+const simpleView = $("simpleView");
 
-// Setup controls
 const sttEngine = $("sttEngine");
 const engineNote = $("engineNote");
 const langSelect = $("langSelect");
@@ -33,27 +28,15 @@ const chunkSec = $("chunkSec");
 const webspeechOptions = $("webspeechOptions");
 const webspeechSupportLine = $("webspeechSupportLine");
 
-// Setup test buttons
-const btnTestStart = $("btnTestStart");
-const btnTestStop = $("btnTestStop");
-
-// Interview buttons
 const btnStart = $("btnStart");
 const btnStop = $("btnStop");
+const btnStart2 = $("btnStart2");
+const btnStop2 = $("btnStop2");
 
-// Transcript boxes (both pages)
-const setupTranscriptEl = $("setupTranscript");
 const transcriptEl = $("transcript");
-
-// Setup transcript tools
-const btnSetupClear = $("btnSetupClear");
-const btnSetupCopy = $("btnSetupCopy");
-
-// Interview transcript tools
 const btnClear = $("btnClear");
 const btnCopy = $("btnCopy");
 
-// Answer
 const ollamaModel = $("ollamaModel");
 const tone = $("tone");
 const resume = $("resume");
@@ -62,7 +45,7 @@ const btnCopyAns = $("btnCopyAns");
 const ansStatus = $("ansStatus");
 const answerEl = $("answer");
 
-// ---------- helpers ----------
+// ---------- UI helpers ----------
 function setPill(el, text, ok=true){
   el.textContent = text;
   el.classList.remove("ok","danger");
@@ -70,35 +53,13 @@ function setPill(el, text, ok=true){
 }
 function setSTT(text, ok=true){ setPill(sttPill, text, ok); }
 
-function setButtonsRunning(running){
-  btnTestStart.disabled = running;
-  btnTestStop.disabled = !running;
-
-  btnStart.disabled = running;
-  btnStop.disabled = !running;
+function showSimpleView(){
+  advancedView.classList.add("hide");
+  simpleView.classList.remove("hide");
 }
-
-function setTranscriptText(text){
-  const t = text || "";
-  if (setupTranscriptEl) setupTranscriptEl.textContent = t;
-  if (transcriptEl) transcriptEl.textContent = t;
-}
-
-function clearTranscript(){
-  setTranscriptText("");
-  resetWebSpeechText();
-  statusLine.textContent = "Cleared.";
-}
-
-async function copyTranscript(){
-  const t = (setupTranscriptEl?.textContent || transcriptEl?.textContent || "").trim();
-  if(!t) return;
-  try{
-    await navigator.clipboard.writeText(t);
-    statusLine.textContent = "Copied transcript.";
-  }catch{
-    window.prompt("Copy transcript:", t);
-  }
+function showAdvancedView(){
+  simpleView.classList.add("hide");
+  advancedView.classList.remove("hide");
 }
 
 // ---------- Backend ----------
@@ -164,7 +125,7 @@ async function loadOllamaModels(){
   }
 }
 
-// ---------- Whisper STT ----------
+// ---------- STT Engine: Whisper backend ----------
 let mediaRecorder = null;
 let audioStream = null;
 let sessionId = null;
@@ -182,8 +143,8 @@ async function startWhisperSTT(){
   if(whisperRunning) return;
   whisperRunning = true;
 
-  setTranscriptText("Starting Whisper STT...");
-  statusLine.textContent = "Requesting microphone permission...";
+  transcriptEl.textContent = "Starting Whisper STT...";
+  if(statusLine) statusLine.textContent = "Requesting microphone permission...";
   setSTT("STT: starting", true);
 
   await startWhisperSession();
@@ -204,8 +165,7 @@ async function startWhisperSTT(){
 
   mediaRecorder.onstart = () => {
     setSTT("STT: listening", true);
-    statusLine.textContent = "Listening (Whisper)...";
-    setButtonsRunning(true);
+    if(statusLine) statusLine.textContent = "Listening (Whisper)...";
   };
 
   mediaRecorder.ondataavailable = async (ev) => {
@@ -224,12 +184,12 @@ async function startWhisperSTT(){
     try{
       const r = await fetch(API_TRANSCRIBE_CHUNK, { method:"POST", body: fd });
       const j = await r.json();
-      setTranscriptText(j.text || "");
-      statusLine.textContent = j.partial ? `Heard: ${j.partial}` : "Listening...";
+      transcriptEl.textContent = j.text || "";
+      if(statusLine) statusLine.textContent = j.partial ? `Heard: ${j.partial}` : "Listening...";
       setSTT("STT: listening", true);
     }catch{
       setSTT("STT: error", false);
-      statusLine.textContent = "Network error sending audio to backend.";
+      if(statusLine) statusLine.textContent = "Network error sending audio to backend.";
     }
 
     chunkIndex += 1;
@@ -237,11 +197,15 @@ async function startWhisperSTT(){
 
   mediaRecorder.onstop = () => {
     setSTT("STT: idle", true);
-    statusLine.textContent = "Stopped.";
-    setButtonsRunning(false);
+    if(statusLine) statusLine.textContent = "Stopped.";
   };
 
   mediaRecorder.start(timesliceMs);
+
+  btnStart.disabled = true;
+  btnStop.disabled = false;
+  btnStart2.disabled = true;
+  btnStop2.disabled = false;
 }
 
 function stopWhisperSTT(){
@@ -262,12 +226,16 @@ function stopWhisperSTT(){
   mediaRecorder = null;
   audioStream = null;
 
+  btnStart.disabled = false;
+  btnStop.disabled = true;
+  btnStart2.disabled = false;
+  btnStop2.disabled = true;
+
   setSTT("STT: idle", true);
-  statusLine.textContent = "Stopped.";
-  setButtonsRunning(false);
+  if(statusLine) statusLine.textContent = "Stopped.";
 }
 
-// ---------- WebSpeech ----------
+// ---------- STT Engine: WebSpeech ----------
 let recognition = null;
 let webspeechRunning = false;
 let finalText = "";
@@ -292,13 +260,13 @@ function startWebSpeechSTT(){
   const SR = getSpeechRec();
   if(!SR){
     setSTT("STT: not supported", false);
-    statusLine.textContent = "WebSpeech not supported on this device. Use Whisper.";
+    if(statusLine) statusLine.textContent = "WebSpeech not supported on this device. Use Whisper.";
     return;
   }
 
   resetWebSpeechText();
-  setTranscriptText("Listening...");
-  statusLine.textContent = "Listening (WebSpeech)...";
+  transcriptEl.textContent = "Starting WebSpeech...";
+  if(statusLine) statusLine.textContent = "Listening (WebSpeech)...";
   setSTT("STT: listening", true);
 
   recognition = new SR();
@@ -320,30 +288,34 @@ function startWebSpeechSTT(){
     if(finalChunk) finalText = (finalText + " " + finalChunk).replace(/\s+/g, " ").trim();
     interimText = interim.trim();
 
-    setTranscriptText(combinedText() || "Listening...");
+    transcriptEl.textContent = combinedText() || "Listening...";
   };
 
   recognition.onerror = () => {
     setSTT("STT: error", false);
-    statusLine.textContent = "WebSpeech error. Switch to Whisper.";
+    if(statusLine) statusLine.textContent = "WebSpeech error. Switch to Whisper.";
   };
 
   recognition.onend = () => {
     webspeechRunning = false;
-    recognition = null;
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+    btnStart2.disabled = false;
+    btnStop2.disabled = true;
     setSTT("STT: idle", true);
-    statusLine.textContent = "Stopped.";
-    setButtonsRunning(false);
+    if(statusLine) statusLine.textContent = "Stopped.";
   };
 
   try{
     recognition.start();
     webspeechRunning = true;
-    setButtonsRunning(true);
+    btnStart.disabled = true;
+    btnStop.disabled = false;
+    btnStart2.disabled = true;
+    btnStop2.disabled = false;
   }catch{
     setSTT("STT: cannot start", false);
-    statusLine.textContent = "WebSpeech could not start. Switch to Whisper.";
-    setButtonsRunning(false);
+    if(statusLine) statusLine.textContent = "WebSpeech could not start. Switch to Whisper.";
   }
 }
 
@@ -352,12 +324,16 @@ function stopWebSpeechSTT(){
   try{ if(recognition) recognition.stop(); }catch{}
   recognition = null;
 
+  btnStart.disabled = false;
+  btnStop.disabled = true;
+  btnStart2.disabled = false;
+  btnStop2.disabled = true;
+
   setSTT("STT: idle", true);
-  statusLine.textContent = "Stopped.";
-  setButtonsRunning(false);
+  if(statusLine) statusLine.textContent = "Stopped.";
 }
 
-// ---------- Engine UI ----------
+// ---------- Engine switching ----------
 function isIOS(){
   const ua = navigator.userAgent || "";
   return /iPad|iPhone|iPod/.test(ua);
@@ -369,7 +345,7 @@ function refreshEngineUI(){
   if(engine === "whisper"){
     whisperOptions.classList.remove("hide");
     webspeechOptions.classList.add("hide");
-    engineNote.textContent = "Whisper works on iPhone and Android. Near-live using chunks.";
+    engineNote.textContent = "Whisper works on iPhone and Android. It is near-live using chunks.";
   } else {
     whisperOptions.classList.add("hide");
     webspeechOptions.classList.remove("hide");
@@ -381,8 +357,10 @@ function refreshEngineUI(){
       : "WebSpeech NOT supported on this device. Use Whisper.";
   }
 
-  if(isIOS() && sttEngine.value === "webspeech" && !getSpeechRec()){
-    webspeechSupportLine.textContent = "iPhone browser does not support WebSpeech. Choose Whisper.";
+  if(isIOS()){
+    if(sttEngine.value === "webspeech" && !getSpeechRec()){
+      webspeechSupportLine.textContent = "iPhone browser does not support WebSpeech. Choose Whisper.";
+    }
   }
 }
 
@@ -391,57 +369,56 @@ function stopAllSTT(){
   stopWebSpeechSTT();
 }
 
-// ---------- Wiring ----------
-btnTestStart.addEventListener("click", async () => {
+sttEngine.addEventListener("change", () => {
+  stopAllSTT();
+  refreshEngineUI();
+});
+
+// Start buttons (advanced + simple)
+async function startSTTFlow(){
   answerEl.textContent = "Your answer will appear here.";
   ansStatus.textContent = "Answer: ready";
 
-  stopAllSTT();
-  const engine = sttEngine.value;
+  // switch UI to simple view after pressing start
+  showSimpleView();
 
+  const engine = sttEngine.value;
   if(engine === "whisper"){
-    try{ await startWhisperSTT(); }
-    catch(e){
+    try{
+      await startWhisperSTT();
+    }catch(e){
       setSTT("STT: error", false);
-      statusLine.textContent = `Whisper STT failed: ${e}`;
-      setButtonsRunning(false);
+      if(statusLine) statusLine.textContent = `Whisper STT failed: ${e}`;
     }
   } else {
     startWebSpeechSTT();
   }
-});
+}
 
-btnTestStop.addEventListener("click", () => stopAllSTT());
-
-btnStart.addEventListener("click", async () => {
-  answerEl.textContent = "Your answer will appear here.";
-  ansStatus.textContent = "Answer: ready";
-
-  stopAllSTT();
-  const engine = sttEngine.value;
-
-  if(engine === "whisper"){
-    try{ await startWhisperSTT(); }
-    catch(e){
-      setSTT("STT: error", false);
-      statusLine.textContent = `Whisper STT failed: ${e}`;
-      setButtonsRunning(false);
-    }
-  } else {
-    startWebSpeechSTT();
-  }
-});
+btnStart.addEventListener("click", startSTTFlow);
+btnStart2.addEventListener("click", startSTTFlow);
 
 btnStop.addEventListener("click", () => stopAllSTT());
+btnStop2.addEventListener("click", () => stopAllSTT());
 
-// clear/copy on both pages
-btnSetupClear.addEventListener("click", clearTranscript);
-btnClear.addEventListener("click", clearTranscript);
+btnClear.addEventListener("click", () => {
+  transcriptEl.textContent = "";
+  resetWebSpeechText();
+  if(statusLine) statusLine.textContent = "Cleared.";
+});
 
-btnSetupCopy.addEventListener("click", copyTranscript);
-btnCopy.addEventListener("click", copyTranscript);
+btnCopy.addEventListener("click", async () => {
+  const t = (transcriptEl.textContent || "").trim();
+  if(!t) return;
+  try{
+    await navigator.clipboard.writeText(t);
+    if(statusLine) statusLine.textContent = "Copied transcript.";
+  }catch{
+    window.prompt("Copy transcript:", t);
+  }
+});
 
-// ---------- Answer ----------
+// ---------- Answer generation ----------
 function toneRule(v){
   if(v === "short") return "Keep it very short (20 to 30 seconds).";
   if(v === "detailed") return "Make it detailed (60 to 90 seconds) with strong structure.";
@@ -449,7 +426,7 @@ function toneRule(v){
 }
 
 btnAnswer.addEventListener("click", async () => {
-  const question = (setupTranscriptEl?.textContent || transcriptEl?.textContent || "").trim();
+  const question = (transcriptEl.textContent || "").trim();
   if(!question){
     ansStatus.textContent = "Answer: transcript empty";
     answerEl.textContent = "Start STT and capture a question first.";
@@ -466,7 +443,7 @@ btnAnswer.addEventListener("click", async () => {
       body: JSON.stringify({
         resume: (resume.value || "").trim(),
         question: `${question}\n\nAnswer length rule: ${toneRule(tone.value)}`,
-        model: ollamaModel.value || "llama3:latest",
+        model: (ollamaModel.value || "llama3:latest"),
         tone: tone.value || "medium"
       })
     });
@@ -491,23 +468,13 @@ btnCopyAns.addEventListener("click", async () => {
   }
 });
 
-// ---------- Views ----------
-startInterviewBtn.addEventListener("click", () => {
-  setupView.classList.add("hide");
-  interviewView.classList.remove("hide");
-});
-
-btnBack.addEventListener("click", () => {
-  interviewView.classList.add("hide");
-  setupView.classList.remove("hide");
-});
-
 // ---------- Init ----------
 (async function init(){
   await checkBackend();
   await loadWhisperModels();
   await loadOllamaModels();
 
+  // Default selection rule:
   if(isIOS()){
     sttEngine.value = "whisper";
   } else {
@@ -515,12 +482,7 @@ btnBack.addEventListener("click", () => {
   }
 
   refreshEngineUI();
-  sttEngine.addEventListener("change", () => {
-    stopAllSTT();
-    refreshEngineUI();
-  });
-
+  showAdvancedView(); // start with advanced view
   setSTT("STT: idle", true);
-  statusLine.textContent = "Ready.";
-  setButtonsRunning(false);
+  if(statusLine) statusLine.textContent = "Ready.";
 })();
