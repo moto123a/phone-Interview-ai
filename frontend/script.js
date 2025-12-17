@@ -1,4 +1,5 @@
 const API_BASE = "https://phone-interview-ai-backend.onrender.com";
+const BACKEND = window.BACKEND || window.location.origin;
 
 
 
