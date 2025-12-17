@@ -1,4 +1,3 @@
-// Backend is SAME origin because FastAPI serves index.html + /static/script.js
 const BACKEND = window.location.origin;
 
 const API_HEALTH = `${BACKEND}/health`;
@@ -11,7 +10,7 @@ const API_ANSWER = `${BACKEND}/answer`;
 
 function $(id){ return document.getElementById(id); }
 
-// Top pills
+// Pills
 const backendPill = $("backendPill");
 const sttPill = $("sttPill");
 const statusLine = $("statusLine");
@@ -34,16 +33,23 @@ const chunkSec = $("chunkSec");
 const webspeechOptions = $("webspeechOptions");
 const webspeechSupportLine = $("webspeechSupportLine");
 
-// Setup test STT buttons
+// Setup test buttons
 const btnTestStart = $("btnTestStart");
 const btnTestStop = $("btnTestStop");
 
-// Interview STT buttons
+// Interview buttons
 const btnStart = $("btnStart");
 const btnStop = $("btnStop");
 
-// Transcript tools
+// Transcript boxes (both pages)
+const setupTranscriptEl = $("setupTranscript");
 const transcriptEl = $("transcript");
+
+// Setup transcript tools
+const btnSetupClear = $("btnSetupClear");
+const btnSetupCopy = $("btnSetupCopy");
+
+// Interview transcript tools
 const btnClear = $("btnClear");
 const btnCopy = $("btnCopy");
 
@@ -56,7 +62,7 @@ const btnCopyAns = $("btnCopyAns");
 const ansStatus = $("ansStatus");
 const answerEl = $("answer");
 
-// ---------- UI helpers ----------
+// ---------- helpers ----------
 function setPill(el, text, ok=true){
   el.textContent = text;
   el.classList.remove("ok","danger");
@@ -65,13 +71,34 @@ function setPill(el, text, ok=true){
 function setSTT(text, ok=true){ setPill(sttPill, text, ok); }
 
 function setButtonsRunning(running){
-  // Setup test
   btnTestStart.disabled = running;
   btnTestStop.disabled = !running;
 
-  // Interview controls
   btnStart.disabled = running;
   btnStop.disabled = !running;
+}
+
+function setTranscriptText(text){
+  const t = text || "";
+  if (setupTranscriptEl) setupTranscriptEl.textContent = t;
+  if (transcriptEl) transcriptEl.textContent = t;
+}
+
+function clearTranscript(){
+  setTranscriptText("");
+  resetWebSpeechText();
+  statusLine.textContent = "Cleared.";
+}
+
+async function copyTranscript(){
+  const t = (setupTranscriptEl?.textContent || transcriptEl?.textContent || "").trim();
+  if(!t) return;
+  try{
+    await navigator.clipboard.writeText(t);
+    statusLine.textContent = "Copied transcript.";
+  }catch{
+    window.prompt("Copy transcript:", t);
+  }
 }
 
 // ---------- Backend ----------
@@ -137,7 +164,7 @@ async function loadOllamaModels(){
   }
 }
 
-// ---------- STT Engine: Whisper backend ----------
+// ---------- Whisper STT ----------
 let mediaRecorder = null;
 let audioStream = null;
 let sessionId = null;
@@ -155,7 +182,7 @@ async function startWhisperSTT(){
   if(whisperRunning) return;
   whisperRunning = true;
 
-  transcriptEl.textContent = "Starting Whisper STT...";
+  setTranscriptText("Starting Whisper STT...");
   statusLine.textContent = "Requesting microphone permission...";
   setSTT("STT: starting", true);
 
@@ -197,7 +224,7 @@ async function startWhisperSTT(){
     try{
       const r = await fetch(API_TRANSCRIBE_CHUNK, { method:"POST", body: fd });
       const j = await r.json();
-      transcriptEl.textContent = j.text || "";
+      setTranscriptText(j.text || "");
       statusLine.textContent = j.partial ? `Heard: ${j.partial}` : "Listening...";
       setSTT("STT: listening", true);
     }catch{
@@ -240,7 +267,7 @@ function stopWhisperSTT(){
   setButtonsRunning(false);
 }
 
-// ---------- STT Engine: WebSpeech ----------
+// ---------- WebSpeech ----------
 let recognition = null;
 let webspeechRunning = false;
 let finalText = "";
@@ -270,7 +297,7 @@ function startWebSpeechSTT(){
   }
 
   resetWebSpeechText();
-  transcriptEl.textContent = "Listening...";
+  setTranscriptText("Listening...");
   statusLine.textContent = "Listening (WebSpeech)...";
   setSTT("STT: listening", true);
 
@@ -293,7 +320,7 @@ function startWebSpeechSTT(){
     if(finalChunk) finalText = (finalText + " " + finalChunk).replace(/\s+/g, " ").trim();
     interimText = interim.trim();
 
-    transcriptEl.textContent = combinedText() || "Listening...";
+    setTranscriptText(combinedText() || "Listening...");
   };
 
   recognition.onerror = () => {
@@ -330,7 +357,7 @@ function stopWebSpeechSTT(){
   setButtonsRunning(false);
 }
 
-// ---------- Engine switching ----------
+// ---------- Engine UI ----------
 function isIOS(){
   const ua = navigator.userAgent || "";
   return /iPad|iPhone|iPod/.test(ua);
@@ -364,15 +391,14 @@ function stopAllSTT(){
   stopWebSpeechSTT();
 }
 
-// ---------- Buttons wiring ----------
-// Setup test buttons
+// ---------- Wiring ----------
 btnTestStart.addEventListener("click", async () => {
   answerEl.textContent = "Your answer will appear here.";
   ansStatus.textContent = "Answer: ready";
 
   stopAllSTT();
-
   const engine = sttEngine.value;
+
   if(engine === "whisper"){
     try{ await startWhisperSTT(); }
     catch(e){
@@ -385,18 +411,15 @@ btnTestStart.addEventListener("click", async () => {
   }
 });
 
-btnTestStop.addEventListener("click", () => {
-  stopAllSTT();
-});
+btnTestStop.addEventListener("click", () => stopAllSTT());
 
-// Interview buttons
 btnStart.addEventListener("click", async () => {
   answerEl.textContent = "Your answer will appear here.";
   ansStatus.textContent = "Answer: ready";
 
   stopAllSTT();
-
   const engine = sttEngine.value;
+
   if(engine === "whisper"){
     try{ await startWhisperSTT(); }
     catch(e){
@@ -409,28 +432,16 @@ btnStart.addEventListener("click", async () => {
   }
 });
 
-btnStop.addEventListener("click", () => {
-  stopAllSTT();
-});
+btnStop.addEventListener("click", () => stopAllSTT());
 
-btnClear.addEventListener("click", () => {
-  transcriptEl.textContent = "";
-  resetWebSpeechText();
-  statusLine.textContent = "Cleared.";
-});
+// clear/copy on both pages
+btnSetupClear.addEventListener("click", clearTranscript);
+btnClear.addEventListener("click", clearTranscript);
 
-btnCopy.addEventListener("click", async () => {
-  const t = (transcriptEl.textContent || "").trim();
-  if(!t) return;
-  try{
-    await navigator.clipboard.writeText(t);
-    statusLine.textContent = "Copied transcript.";
-  }catch{
-    window.prompt("Copy transcript:", t);
-  }
-});
+btnSetupCopy.addEventListener("click", copyTranscript);
+btnCopy.addEventListener("click", copyTranscript);
 
-// ---------- Answer generation ----------
+// ---------- Answer ----------
 function toneRule(v){
   if(v === "short") return "Keep it very short (20 to 30 seconds).";
   if(v === "detailed") return "Make it detailed (60 to 90 seconds) with strong structure.";
@@ -438,7 +449,7 @@ function toneRule(v){
 }
 
 btnAnswer.addEventListener("click", async () => {
-  const question = (transcriptEl.textContent || "").trim();
+  const question = (setupTranscriptEl?.textContent || transcriptEl?.textContent || "").trim();
   if(!question){
     ansStatus.textContent = "Answer: transcript empty";
     answerEl.textContent = "Start STT and capture a question first.";
@@ -480,7 +491,7 @@ btnCopyAns.addEventListener("click", async () => {
   }
 });
 
-// ---------- View switching ----------
+// ---------- Views ----------
 startInterviewBtn.addEventListener("click", () => {
   setupView.classList.add("hide");
   interviewView.classList.remove("hide");
@@ -497,9 +508,6 @@ btnBack.addEventListener("click", () => {
   await loadWhisperModels();
   await loadOllamaModels();
 
-  // Default selection rule:
-  // iPhone -> whisper
-  // Android/desktop -> webspeech if supported, else whisper
   if(isIOS()){
     sttEngine.value = "whisper";
   } else {
@@ -507,7 +515,6 @@ btnBack.addEventListener("click", () => {
   }
 
   refreshEngineUI();
-
   sttEngine.addEventListener("change", () => {
     stopAllSTT();
     refreshEngineUI();
