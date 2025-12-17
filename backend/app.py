@@ -16,34 +16,34 @@ from faster_whisper import WhisperModel
 # ----------------------------
 app = FastAPI()
 
-# If you serve frontend from same backend domain, CORS is not needed.
-# Keeping it enabled is fine for testing.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # ok for testing
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ----------------------------
-# Serve Frontend (same Render service)
+# Serve Frontend from same backend
 # ----------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo root
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
 
-# Serve /static -> frontend files (script.js, css, etc.)
+# Static files (index.html + script.js)
+# Access script via: /static/script.js
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
 
 @app.get("/")
 def root():
-    # Serve your frontend page
-    index_path = os.path.join(FRONTEND_DIR, "index.html")
-    return FileResponse(index_path)
+    return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
 
 @app.get("/health")
 def health():
     return {"ok": True, "service": "phone-interview-ai"}
+
 
 # ----------------------------
 # Whisper STT (backend)
@@ -79,13 +79,16 @@ def new_session() -> str:
     SESSIONS[sid] = {"text": "", "last_chunk": -1}
     return sid
 
+
 @app.get("/stt/models")
 def stt_models():
     return {"models": SUPPORTED_WHISPER_MODELS}
 
+
 @app.post("/stt/session")
 def stt_session():
     return {"session_id": new_session()}
+
 
 @app.post("/transcribe_chunk")
 async def transcribe_chunk(
@@ -95,7 +98,7 @@ async def transcribe_chunk(
     model: str = Form("base"),
     language: str = Form("en"),
 ):
-    if session_id not in SESSIONS:
+    if not session_id or session_id not in SESSIONS:
         session_id = new_session()
 
     sess = SESSIONS[session_id]
@@ -151,25 +154,17 @@ async def transcribe_chunk(
         except Exception:
             pass
 
+
 # ----------------------------
-# Answer (IMPORTANT NOTE)
+# Ollama Answer (local)
 # ----------------------------
-# This hits Ollama on localhost. That works ONLY on your PC.
-# On Render, localhost is NOT your computer, so this will fail unless you host Ollama elsewhere.
+# NOTE: This works only when backend runs on the same machine where Ollama runs.
+# If you deploy backend to Render, 127.0.0.1:11434 will NOT be your laptop.
 class AnswerReq(BaseModel):
     resume: str = ""
     question: str
     model: str = "llama3:latest"
     tone: str = "medium"
-
-@app.get("/ollama/models")
-def ollama_models():
-    try:
-        tags = requests.get("http://127.0.0.1:11434/api/tags", timeout=5).json()
-        models = [m["name"] for m in tags.get("models", []) if "name" in m]
-        return {"models": models}
-    except Exception:
-        return {"models": []}
 
 def tone_rule(tone: str) -> str:
     t = (tone or "medium").strip().lower()
@@ -178,6 +173,17 @@ def tone_rule(tone: str) -> str:
     if t == "detailed":
         return "Make it detailed (60 to 90 seconds) with strong structure."
     return "Keep it concise (30 to 60 seconds)."
+
+
+@app.get("/ollama/models")
+def ollama_models():
+    try:
+        tags = requests.get("http://127.0.0.1:11434/api/tags", timeout=5).json()
+        models = [m.get("name") for m in tags.get("models", []) if m.get("name")]
+        return {"models": models}
+    except Exception:
+        return {"models": []}
+
 
 @app.post("/answer")
 def answer(req: AnswerReq):
