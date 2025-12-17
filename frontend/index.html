@@ -61,14 +61,12 @@
       </div>
     </div>
 
-    <!-- =========================
-         VIEW 1: SETUP PAGE
-    ========================== -->
+    <!-- VIEW 1: SETUP -->
     <div id="setupView">
       <div class="card">
         <div class="headerRow">
           <h2>Setup</h2>
-          <div class="soft">Choose STT + Model, test mic, then start interview.</div>
+          <div class="soft">Test mic here, then go to interview view.</div>
         </div>
       </div>
 
@@ -123,12 +121,22 @@
         <div class="mini" id="statusLine">Ready.</div>
       </div>
 
+      <!-- LIVE TRANSCRIPT PREVIEW ON SETUP PAGE -->
+      <div class="card">
+        <label>Live Transcript (Test View)</label>
+        <div class="mono bigBox" id="setupTranscript">Press Test Mic, then speak.</div>
+        <div class="grid2" style="margin-top:10px;">
+          <button id="btnSetupClear">Clear</button>
+          <button id="btnSetupCopy">Copy Transcript</button>
+        </div>
+      </div>
+
       <div class="card">
         <div class="grid2">
           <div>
             <label>Ollama Model</label>
             <select id="ollamaModel"></select>
-            <div class="mini">Works only if backend runs on the same PC where Ollama is running.</div>
+            <div class="mini">Works only if backend runs on same PC where Ollama is running.</div>
           </div>
           <div>
             <label>Answer Tone</label>
@@ -137,7 +145,7 @@
               <option value="medium" selected>Medium</option>
               <option value="detailed">Detailed</option>
             </select>
-            <div class="mini">Controls how long the answer will be.</div>
+            <div class="mini">Controls answer length.</div>
           </div>
         </div>
 
@@ -152,17 +160,14 @@
       </div>
     </div>
 
-    <!-- =========================
-         VIEW 2: INTERVIEW PAGE
-         Only Transcript + Answer
-    ========================== -->
+    <!-- VIEW 2: INTERVIEW -->
     <div id="interviewView" class="hide">
       <div class="card">
         <div class="headerRow">
           <h2>Interview</h2>
           <button id="btnBack" style="max-width:180px;">Back</button>
         </div>
-        <div class="mini">This view shows only transcript and answer.</div>
+        <div class="mini">Only transcript and answer are shown here.</div>
       </div>
 
       <div class="card">
@@ -193,7 +198,6 @@
 
   </div>
 
-  <!-- Keep JS separate -->
   <script src="/static/script.js"></script>
 </body>
 </html>
