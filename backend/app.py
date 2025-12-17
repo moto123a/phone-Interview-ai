@@ -11,9 +11,6 @@ from typing import Dict
 
 from faster_whisper import WhisperModel
 
-# ----------------------------
-# App
-# ----------------------------
 app = FastAPI()
 
 app.add_middleware(
@@ -25,28 +22,22 @@ app.add_middleware(
 )
 
 # ----------------------------
-# Serve Frontend from same backend
+# Serve Frontend
 # ----------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo root
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
-
-# Static files (index.html + script.js)
-# Access script via: /static/script.js
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
-
 
 @app.get("/")
 def root():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
-
 @app.get("/health")
 def health():
     return {"ok": True, "service": "phone-interview-ai"}
 
-
 # ----------------------------
-# Whisper STT (backend)
+# Whisper STT
 # ----------------------------
 MODEL_CACHE: Dict[str, WhisperModel] = {}
 
@@ -71,7 +62,6 @@ def get_whisper(model_name: str) -> WhisperModel:
     MODEL_CACHE[name] = m
     return m
 
-# in-memory session store
 SESSIONS: Dict[str, Dict] = {}
 
 def new_session() -> str:
@@ -79,16 +69,13 @@ def new_session() -> str:
     SESSIONS[sid] = {"text": "", "last_chunk": -1}
     return sid
 
-
 @app.get("/stt/models")
 def stt_models():
     return {"models": SUPPORTED_WHISPER_MODELS}
 
-
 @app.post("/stt/session")
 def stt_session():
     return {"session_id": new_session()}
-
 
 @app.post("/transcribe_chunk")
 async def transcribe_chunk(
@@ -103,7 +90,6 @@ async def transcribe_chunk(
 
     sess = SESSIONS[session_id]
 
-    # ignore duplicate chunks
     if chunk_index <= sess["last_chunk"]:
         return {"session_id": session_id, "text": sess["text"], "partial": ""}
 
@@ -147,19 +133,20 @@ async def transcribe_chunk(
         sess["last_chunk"] = chunk_index
 
         return {"session_id": session_id, "text": sess["text"], "partial": partial_text}
-
     finally:
         try:
             os.remove(tmp_path)
         except Exception:
             pass
 
-
 # ----------------------------
 # Ollama Answer (local)
 # ----------------------------
-# NOTE: This works only when backend runs on the same machine where Ollama runs.
-# If you deploy backend to Render, 127.0.0.1:11434 will NOT be your laptop.
+# IMPORTANT:
+# If backend is deployed to Render, this will NOT reach your laptop Ollama.
+# For Render + iPhone, you must use a cloud LLM endpoint instead.
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+
 class AnswerReq(BaseModel):
     resume: str = ""
     question: str
@@ -174,16 +161,14 @@ def tone_rule(tone: str) -> str:
         return "Make it detailed (60 to 90 seconds) with strong structure."
     return "Keep it concise (30 to 60 seconds)."
 
-
 @app.get("/ollama/models")
 def ollama_models():
     try:
-        tags = requests.get("http://127.0.0.1:11434/api/tags", timeout=5).json()
+        tags = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5).json()
         models = [m.get("name") for m in tags.get("models", []) if m.get("name")]
         return {"models": models}
     except Exception:
         return {"models": []}
-
 
 @app.post("/answer")
 def answer(req: AnswerReq):
@@ -213,10 +198,21 @@ def answer(req: AnswerReq):
     }
 
     try:
-        r = requests.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=120)
+        r = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=120)
         r.raise_for_status()
         data = r.json()
         content = (data.get("message", {}) or {}).get("content", "") or ""
         return {"answer": content.strip() if content else "No answer returned from Ollama."}
+    except requests.exceptions.ConnectionError:
+        return {
+            "answer": (
+                "Ollama is not running or not reachable.\n"
+                "Fix:\n"
+                "1) Install Ollama\n"
+                "2) Start it\n"
+                "3) Verify: open http://127.0.0.1:11434/api/tags in browser\n"
+                "If you are using Render, Ollama on your laptop cannot be used."
+            )
+        }
     except Exception as e:
         return {"answer": f"Ollama error: {e}"}
