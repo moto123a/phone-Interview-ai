@@ -1,5 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import requests
 import tempfile
@@ -9,26 +11,39 @@ from typing import Dict
 
 from faster_whisper import WhisperModel
 
+# ----------------------------
+# App
+# ----------------------------
 app = FastAPI()
 
+# If you serve frontend from same backend domain, CORS is not needed.
+# Keeping it enabled is fine for testing.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # local testing
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ----------------------------
-# Root + Health
+# Serve Frontend (same Render service)
 # ----------------------------
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo root
+FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+
+# Serve /static -> frontend files (script.js, css, etc.)
+app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "phone-interview-ai"}
+    # Serve your frontend page
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    return FileResponse(index_path)
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "service": "phone-interview-ai"}
 
 # ----------------------------
 # Whisper STT (backend)
@@ -56,7 +71,7 @@ def get_whisper(model_name: str) -> WhisperModel:
     MODEL_CACHE[name] = m
     return m
 
-# Simple in-memory session store for chunked transcription
+# in-memory session store
 SESSIONS: Dict[str, Dict] = {}
 
 def new_session() -> str:
@@ -85,6 +100,7 @@ async def transcribe_chunk(
 
     sess = SESSIONS[session_id]
 
+    # ignore duplicate chunks
     if chunk_index <= sess["last_chunk"]:
         return {"session_id": session_id, "text": sess["text"], "partial": ""}
 
@@ -103,7 +119,6 @@ async def transcribe_chunk(
         tmp_path = tmp.name
         tmp.write(await audio.read())
 
-    partial_text = ""
     try:
         whisper = get_whisper(model)
         segments, _info = whisper.transcribe(
@@ -136,10 +151,11 @@ async def transcribe_chunk(
         except Exception:
             pass
 
-
 # ----------------------------
-# Ollama Answer (local)
+# Answer (IMPORTANT NOTE)
 # ----------------------------
+# This hits Ollama on localhost. That works ONLY on your PC.
+# On Render, localhost is NOT your computer, so this will fail unless you host Ollama elsewhere.
 class AnswerReq(BaseModel):
     resume: str = ""
     question: str
@@ -187,7 +203,7 @@ def answer(req: AnswerReq):
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "stream": False,
+        "stream": False
     }
 
     try:
