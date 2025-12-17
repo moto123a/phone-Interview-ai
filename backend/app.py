@@ -5,7 +5,7 @@ import requests
 import tempfile
 import os
 import uuid
-from typing import Dict, Optional
+from typing import Dict
 
 from faster_whisper import WhisperModel
 
@@ -18,6 +18,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ----------------------------
+# Root + Health
+# ----------------------------
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "phone-interview-ai"}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 # ----------------------------
 # Whisper STT (backend)
@@ -52,10 +63,6 @@ def new_session() -> str:
     sid = str(uuid.uuid4())
     SESSIONS[sid] = {"text": "", "last_chunk": -1}
     return sid
-
-@app.get("/health")
-def health():
-    return {"ok": True}
 
 @app.get("/stt/models")
 def stt_models():
@@ -129,6 +136,7 @@ async def transcribe_chunk(
         except Exception:
             pass
 
+
 # ----------------------------
 # Ollama Answer (local)
 # ----------------------------
@@ -179,7 +187,7 @@ def answer(req: AnswerReq):
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "stream": False
+        "stream": False,
     }
 
     try:
@@ -190,7 +198,3 @@ def answer(req: AnswerReq):
         return {"answer": content.strip() if content else "No answer returned from Ollama."}
     except Exception as e:
         return {"answer": f"Ollama error: {e}"}
-        @app.get("/")
-def root():
-    return {"status": "ok", "service": "phone-interview-ai"}
-
