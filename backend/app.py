@@ -7,37 +7,44 @@ import requests
 import tempfile
 import os
 import uuid
-from typing import Dict
+from typing import Dict, Optional
 
 from faster_whisper import WhisperModel
 
+# ----------------------------
+# App
+# ----------------------------
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # ok for testing
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ----------------------------
-# Serve Frontend
+# Serve Frontend (same service)
 # ----------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # repo root
 FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
 
 @app.get("/")
 def root():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": "phone-interview-ai"}
 
+
 # ----------------------------
-# Whisper STT
+# Whisper STT (backend)
 # ----------------------------
 MODEL_CACHE: Dict[str, WhisperModel] = {}
 
@@ -52,6 +59,7 @@ SUPPORTED_WHISPER_MODELS = [
     "large-v3",
 ]
 
+
 def get_whisper(model_name: str) -> WhisperModel:
     name = (model_name or "").strip()
     if name not in SUPPORTED_WHISPER_MODELS:
@@ -62,20 +70,26 @@ def get_whisper(model_name: str) -> WhisperModel:
     MODEL_CACHE[name] = m
     return m
 
+
+# in-memory session store
 SESSIONS: Dict[str, Dict] = {}
+
 
 def new_session() -> str:
     sid = str(uuid.uuid4())
     SESSIONS[sid] = {"text": "", "last_chunk": -1}
     return sid
 
+
 @app.get("/stt/models")
 def stt_models():
     return {"models": SUPPORTED_WHISPER_MODELS}
 
+
 @app.post("/stt/session")
 def stt_session():
     return {"session_id": new_session()}
+
 
 @app.post("/transcribe_chunk")
 async def transcribe_chunk(
@@ -85,11 +99,12 @@ async def transcribe_chunk(
     model: str = Form("base"),
     language: str = Form("en"),
 ):
-    if not session_id or session_id not in SESSIONS:
+    if session_id not in SESSIONS:
         session_id = new_session()
 
     sess = SESSIONS[session_id]
 
+    # ignore duplicate chunks
     if chunk_index <= sess["last_chunk"]:
         return {"session_id": session_id, "text": sess["text"], "partial": ""}
 
@@ -133,25 +148,35 @@ async def transcribe_chunk(
         sess["last_chunk"] = chunk_index
 
         return {"session_id": session_id, "text": sess["text"], "partial": partial_text}
+
     finally:
         try:
             os.remove(tmp_path)
         except Exception:
             pass
 
+
 # ----------------------------
-# Ollama Answer (local)
+# Ollama (Option B: Render -> your laptop via ngrok)
 # ----------------------------
-# IMPORTANT:
-# If backend is deployed to Render, this will NOT reach your laptop Ollama.
-# For Render + iPhone, you must use a cloud LLM endpoint instead.
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+def env_str(name: str, default: str = "") -> str:
+    return (os.getenv(name) or default).strip()
+
+
+# Put your ngrok URL here on Render as environment variable.
+# Example: https://3a970bf72b45.ngrok-free.app
+OLLAMA_BASE_URL = env_str("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+
+# Important: ngrok often shows a browser warning page unless this header is present.
+NGROK_SKIP_HEADER = {"ngrok-skip-browser-warning": "1"}
+
 
 class AnswerReq(BaseModel):
     resume: str = ""
     question: str
     model: str = "llama3:latest"
     tone: str = "medium"
+
 
 def tone_rule(tone: str) -> str:
     t = (tone or "medium").strip().lower()
@@ -161,14 +186,24 @@ def tone_rule(tone: str) -> str:
         return "Make it detailed (60 to 90 seconds) with strong structure."
     return "Keep it concise (30 to 60 seconds)."
 
+
+def ollama_url(path: str) -> str:
+    if not path.startswith("/"):
+        path = "/" + path
+    return f"{OLLAMA_BASE_URL}{path}"
+
+
 @app.get("/ollama/models")
 def ollama_models():
     try:
-        tags = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5).json()
-        models = [m.get("name") for m in tags.get("models", []) if m.get("name")]
-        return {"models": models}
-    except Exception:
-        return {"models": []}
+        r = requests.get(ollama_url("/api/tags"), headers=NGROK_SKIP_HEADER, timeout=10)
+        r.raise_for_status()
+        tags = r.json()
+        models = [m["name"] for m in tags.get("models", []) if "name" in m]
+        return {"models": models, "base_url": OLLAMA_BASE_URL}
+    except Exception as e:
+        return {"models": [], "base_url": OLLAMA_BASE_URL, "error": str(e)}
+
 
 @app.post("/answer")
 def answer(req: AnswerReq):
@@ -194,25 +229,25 @@ def answer(req: AnswerReq):
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "stream": False
+        "stream": False,
     }
 
     try:
-        r = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=120)
+        r = requests.post(
+            ollama_url("/api/chat"),
+            json=payload,
+            headers={**NGROK_SKIP_HEADER, "Content-Type": "application/json"},
+            timeout=120,
+        )
         r.raise_for_status()
         data = r.json()
         content = (data.get("message", {}) or {}).get("content", "") or ""
         return {"answer": content.strip() if content else "No answer returned from Ollama."}
-    except requests.exceptions.ConnectionError:
+    except Exception as e:
         return {
             "answer": (
-                "Ollama is not running or not reachable.\n"
-                "Fix:\n"
-                "1) Install Ollama\n"
-                "2) Start it\n"
-                "3) Verify: open http://127.0.0.1:11434/api/tags in browser\n"
-                "If you are using Render, Ollama on your laptop cannot be used."
+                f"Ollama error: {e}\n\n"
+                f"Using OLLAMA_BASE_URL={OLLAMA_BASE_URL}\n"
+                "If you are using ngrok, keep ngrok running and use the https forwarding URL."
             )
         }
-    except Exception as e:
-        return {"answer": f"Ollama error: {e}"}
